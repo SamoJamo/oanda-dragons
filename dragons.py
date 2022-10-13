@@ -1,17 +1,48 @@
+import json
+import copy
 import requests
 
+api_key = '' 
+with open('api.key','r') as f:
+    api_key = f.readlines()[0].replace('\n','')
+
+
 class Account:
-    def __init__(self,**kwargs):
-        self.api_key    = None
-        self.account_id = None
-        if api_key in kwargs:
-            self.api_key = api_key
-        if account_id in kwargs:
-            self.account_id = account_id
+    def __init__(self,api_key):
+        self.api_key    = api_key
+        self.base_url   = 'https://api-fxpractice.oanda.com/v3'
+        self.headers    = {'Authorization':f'Bearer {self.api_key}'}
+        self.account_id = self.get_accounts().json()['accounts'][0]['id']
+
+    def get_accounts(self):
+        url = self.base_url + '/accounts'
+        response = requests.get(url,headers=self.headers)
+        return(response)
+
+    def get_instruments(self):
+        url = f'{self.base_url}/accounts/{self.account_id}/instruments' 
+        response = requests.get(url,headers=self.headers)
+        return(response)
+
+
+class Instrument(Account):
+    def __init__(self, name, **kwargs):
+        super().__init__(kwargs['api_key'])
+        self.name = name
+        self.price = self.get_price()         
+    
+    def get_price(self):
+        url = f'{self.base_url}/accounts/{self.account_id}/instruments/{self.name}/candles'
+        headers = copy.deepcopy(self.headers)
+        headers['Accept-Datetime-Format'] = 'RFC3339'
+        params = {'price':'B', 'granularity':'D', 'count':'2'}
+        response = requests.get(url,headers=headers,params=params)
+        return(response)
+ 
             
 class OrderRequest(Account):
-    def __init__(self, **kwargs)
-        super().__init__(api_key=kwargs['api_key'], account_id=kwargs['account_id'])
+    def __init__(self, **kwargs):
+        super().__init__(kwargs['api_key'])
         self.price              = kwargs['price']
         self.stop_loss          = kwargs['stop_loss']
         self.price_bound        = kwargs['price_bound']
@@ -19,32 +50,23 @@ class OrderRequest(Account):
         self.position_volume    = kwargs['position_volume']
     
     def send(self):
-        url = f'/accounts/{self.account_id}/orders'
-        headers = 
-        {
-            'Authorization'         :f'Bearer {self.api_key}',
-            'Accept-Datetime-Format':'RFC3339',
-            'Content-type'          :'application/json'
-        }
-        order_request_dict = 
-        {
+        self.url += f'/{self.account_id}/orders'
+        headers = copy.deepcopy(self.headers)
+        headers['Accept-Datetime-Format'] = 'RFC3339'
+        order_request_dict = {
             'instrument'        : f'({position_symbol})',
-            'units'             : f'({position_volume})',   # note that positive values are interpreted as a buy order and negative values are interpreted as a sell order
-            'priceBound'        : f'({priceValue})',        # the worst price that the order will execute at
+            'units'             : f'({position_volume})',   # note that 
+            # positive unit values are interpreted as a buy order and 
+            # negative unit values are interpreted as a sell order
+            'priceBound'        : f'({priceValue})',        # priceBound 
+            # indicates the worst price that the order will execute at
             'positionFill'      : f'(OPEN_ONLY)',
             'stopLossOnFill'    : {'price':f'{stop_loss}'}
         }
         data = json.dumps(order_dict)
-        return requests.post(url,headers=headers,data=data)
-
-def main():
-    url = 'https://api-fxpractice.oanda.com/v3/accounts'
-    api_key = '' 
-    with open('api.key','r') as f:
-        api_key = f.readlines()[0].replace('\n','')
-    headers = {'Content-type':'application/json','Authorization':f'Bearer {api_key}'}
-    response = requests.get(url,headers=headers)
-    return response
-
+        return(requests.post(url,headers=headers,data=data))
+ 
 if __name__ == "__main__":
-    print(main().text)
+    prices = Instrument('EUR_USD', api_key=api_key)
+    print(prices.price.text)
+       
