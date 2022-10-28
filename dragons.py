@@ -1,4 +1,4 @@
-import copy
+from encodings import utf_8
 import json
 import pprint
 import datetime as dt
@@ -9,24 +9,24 @@ from ta.volatility import AverageTrueRange
 from ta.trend import ADXIndicator
 
 # TODO
-#   - fix Trade object to accept trade data from get_open_orders 
-#   - better exception handling 
+#   - fix Trade object to accept trade data from get_open_orders
+#   - better exception handling
 #       - ie what happens when
 #       - market is closed?
 #       - connection is bad
 
-api_key = '' 
+API_KEY = ''
 
-with open('api.key','r') as f:
-    api_key = f.readlines()[0].replace('\n','')
+with open('api.key','r',encoding=utf_8) as f:
+    API_KEY = f.readlines()[0].replace('\n','')
 
 
 class ResponseError(Exception):
-      pass
+    pass
 
 
 class Account:
-    def __init__(self,api_key,live=False,account_id=None):
+    def __init__(self, api_key,live=False,account_id=None):
         self.api_key    = api_key
         self.base_url   = 'https://api-fxpractice.oanda.com/v3'
         if live == True:
@@ -34,7 +34,7 @@ class Account:
         self.headers    = { 'Authorization': f'Bearer {self.api_key}',
                             'Accept-Datetime-Format': 'RFC3339'}
         self.account_id = self.get_id()
-        if account_id != None:
+        if account_id is not None:
             self.account_id = account_id
         self.currency   = self.get_summary().json()['account']['currency']
 
@@ -120,7 +120,7 @@ class Symbol:
                         close_series], axis=1) 
         return(df) 
         
-    def get_adx(self, number_of_periods=40):
+    def get_adx(self):
         df = self.get_ohlc() 
         adx_indicator = ADXIndicator(
                             high=df['high'],
@@ -129,7 +129,7 @@ class Symbol:
                             window=18)
         return(adx_indicator.adx())
  
-    def get_atr(self, number_of_periods=40):
+    def get_atr(self):
         df = self.get_ohlc()
         atr_indicator = AverageTrueRange(
                             high=df['high'], 
@@ -147,7 +147,8 @@ class PositionSize:
             - account is the object defined above
             - percent_risk is percentage of account balance to be 
                 risked on each trade
-            - risk_pips is the amount of risk taken in pips"""
+            - risk_pips is the amount of risk taken in pips
+        """
         self.symbol = kwargs['symbol']
         self.account = kwargs['account']
         self.percent_risk = kwargs['percent_risk']
@@ -175,10 +176,11 @@ class PositionSize:
     def get_conversion_rate(self):
         """Using the self.symbol and self.account attributes,
         returns the conversion rate between the account currency and
-        trade quote currency"""
+        trade quote currency
+        """
         conversion_rate = 0
         if self.symbol.base_currency == self.account.currency:
-            conversion_factor = 1
+            conversion_rate = 1
         else:
             try:
                 symbol = Symbol(
@@ -206,7 +208,8 @@ class Trade:
         - api_key is the key provided by Oanda for the account
         - initial_risk is the distance to set the stop loss from the open price
         - symbol is an symbol object defined above
-        - position_volume is a size derived from PositionSize object below"""
+        - position_volume is a size derived from PositionSize object below
+    """
             
     def __init__(self, account, **kwargs):
         self.account            = account
@@ -236,7 +239,7 @@ class Trade:
 
     @classmethod
     def from_json(cls, account, trade_json):
-        """Create a Trade object from a json, 
+        """Create a Trade object from a json,
         useful for pulling trade data from server"""
         retval = cls(
             account,
@@ -257,14 +260,13 @@ class Trade:
         url = f'{self.account.base_url}/accounts/{self.account.account_id}/orders'
         order_request_dict = {
             'order' : {
-                'type'              : f'MARKET',
+                'type'              : 'MARKET',
                 'instrument'        : f'{self.symbol.name}',
-                'units'             : f'{self.position_volume}',   
-                'priceBound'        : f'{self.price_bound}',        
+                'units'             : f'{self.position_volume}',  
+                'priceBound'        : f'{self.price_bound}',       
                 # ^ indicates the worst price that the order will execute at
-                'positionFill'      : f'OPEN_ONLY',
+                'positionFill'      : 'OPEN_ONLY',
                 'stopLossOnFill'    : {'price' : f'{self.stop_loss_price}'}}}
-        data = json.dumps(order_request_dict)
         return(requests.post(url, headers=self.account.headers, json=order_request_dict))
 
     def close(self):
@@ -274,8 +276,9 @@ class Trade:
 
 class Entry:
     """Class containing entry criteria functions"""
+    @classmethod
     def channel_breakout(symbol):
-        """ Takes an Symbol object and returns either a string 
+        """ Takes an Symbol object and returns either a string
             indicating whether to enter on the buy or sell side
             or None if no entry is found."""
         adx = symbol.get_adx()
@@ -291,10 +294,11 @@ class Entry:
     
 class Exit:
     """Class containing exit criteria functions"""
+    @classmethod
     def trailing_period_close(account, trade, periods=40):
-        """ Takes a trade, account and period and checks the lowest 
+        """ Takes a trade, account and period and checks the lowest
             and highest price for those times. If the largest adverse
-            price of n periods occurred in the most recent period, 
+            price of n periods occurred in the most recent period,
             returns True, else False"""
         ohlc        = trade.symbol.get_ohlc()
         if  (ohlc['close'].max() == ohlc['close'][-1]
@@ -312,11 +316,11 @@ class Exit:
             return False
 
 if __name__ == "__main__":
-    list_of_symbols = [ 'EUR_USD', 'ETH_USD', 'USD_JPY', 'BTC_USD', 
+    list_of_symbols = [ 'EUR_USD', 'ETH_USD', 'USD_JPY', 'BTC_USD',
                         'WTICO_USD', 'GBP_USD', 'NATGAS_USD',
                         'SPX500_USD']
-    
-    account = Account(api_key)
+  
+    account = Account(API_KEY)
 
     for trade in account.get_open_trades().json()['trades']:
         trade_obj = Trade.from_json(account,trade)
@@ -326,34 +330,30 @@ if __name__ == "__main__":
             initial_risk = symbol.last_atr
 
             units = PositionSize(
-                symbol=symbol, 
-                account=account, 
-                risk_pips=initial_risk, 
+                symbol=symbol,
+                account=account,
+                risk_pips=initial_risk,
                 percent_risk=0.01,
                 is_buy=False).size
 
             position = Trade.from_request(account,trade)
-                
-            pprint.pp(order.close().json())
 
     for name in list_of_symbols:
         symbol = Symbol(name, account)
         if Entry.channel_breakout(symbol) == None:
             print(f'No new entry for symbol {name}')
             continue
-
         elif Entry.channel_breakout(symbol) == 'buy entry':
-            is_buy = True
-    
+            is_buy = True   
         elif Entry.channel_breakout(symbol) == 'sell entry':
             is_buy = False
 
         initial_risk = symbol.last_atr
 
         units = PositionSize(
-            account=account, 
-            symbol=symbol, 
-            risk_pips=initial_risk, 
+            account=account,
+            symbol=symbol,
+            risk_pips=initial_risk,
             percent_risk=0.01,
             is_buy=is_buy).size
 
