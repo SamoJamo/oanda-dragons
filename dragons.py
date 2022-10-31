@@ -1,4 +1,3 @@
-from encodings import utf_8
 import json
 import pprint
 import datetime as dt
@@ -17,7 +16,7 @@ from ta.trend import ADXIndicator
 
 API_KEY = ''
 
-with open('api.key','r',encoding=utf_8) as f:
+with open('api.key','r',encoding=str) as f:
     API_KEY = f.readlines()[0].replace('\n','')
 
 
