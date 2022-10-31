@@ -16,7 +16,7 @@ from ta.trend import ADXIndicator
 
 API_KEY = ''
 
-with open('api.key','r',encoding=str) as f:
+with open('api.key','r',encoding='utf-8') as f:
     API_KEY = f.readlines()[0].replace('\n','')
 
 
