@@ -275,7 +275,6 @@ class Trade:
 
 class Entry:
     """Class containing entry criteria functions"""
-    @classmethod
     def channel_breakout(symbol):
         """ Takes an Symbol object and returns either a string
             indicating whether to enter on the buy or sell side
@@ -293,7 +292,6 @@ class Entry:
     
 class Exit:
     """Class containing exit criteria functions"""
-    @classmethod
     def trailing_period_close(account, trade, periods=40):
         """ Takes a trade, account and period and checks the lowest
             and highest price for those times. If the largest adverse
@@ -318,7 +316,6 @@ if __name__ == "__main__":
     list_of_symbols = [ 'EUR_USD', 'ETH_USD', 'USD_JPY', 'BTC_USD',
                         'WTICO_USD', 'GBP_USD', 'NATGAS_USD',
                         'SPX500_USD']
-  
     account = Account(API_KEY)
 
     for trade in account.get_open_trades().json()['trades']:
