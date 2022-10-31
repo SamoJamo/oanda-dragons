@@ -8,11 +8,12 @@ from ta.volatility import AverageTrueRange
 from ta.trend import ADXIndicator
 
 # TODO
-#   - fix Trade object to accept trade data from get_open_orders
-#   - better exception handling
-#       - ie what happens when
-#       - market is closed?
-#       - connection is bad
+#   - test Trade object to accept trade data from get_open_orders
+#   - write docstrings for all classes and methods
+#   - response exception handling:
+#       - 200 good
+#       - 400 bad
+#       - 500 real bad
 
 API_KEY = ''
 
@@ -276,15 +277,16 @@ class Trade:
 class Entry:
     """Class containing entry criteria functions"""
     def channel_breakout(symbol):
-        """ Takes an Symbol object and returns either a string
+        """ Take a Symbol object and return either a string
             indicating whether to enter on the buy or sell side
-            or None if no entry is found."""
+            or None if no entry is found.
+        """
         adx = symbol.get_adx()
         ohlc = symbol.get_ohlc()
         if adx[-2] > 25 and ohlc['close'].max() == ohlc['close'][-1]:
             #buy 
             return 'buy entry'
-        elif adx[-2] > 25 and ohlc['close'].max() == ohlc['close'][-1]:
+        elif adx[-2] > 25 and ohlc['close'].min() == ohlc['close'][-1]:
             #sell
             return 'sell entry'
         else:
@@ -296,8 +298,9 @@ class Exit:
         """ Takes a trade, account and period and checks the lowest
             and highest price for those times. If the largest adverse
             price of n periods occurred in the most recent period,
-            returns True, else False"""
-        ohlc        = trade.symbol.get_ohlc()
+            returns True, else False
+        """
+        ohlc = trade.symbol.get_ohlc()
         if  (ohlc['close'].max() == ohlc['close'][-1]
             and trade.position_volume < 0):
             #sell exit
@@ -315,12 +318,12 @@ class Exit:
 if __name__ == "__main__":
     list_of_symbols = [ 'EUR_USD', 'ETH_USD', 'USD_JPY', 'BTC_USD',
                         'WTICO_USD', 'GBP_USD', 'NATGAS_USD',
-                        'SPX500_USD']
+                       'SPX500_USD']
     account = Account(API_KEY)
 
     for trade in account.get_open_trades().json()['trades']:
         trade_obj = Trade.from_json(account,trade)
-        print(trade_obj.trade_id)
+
         if Exit.trailing_period_close(account, trade_obj):
             symbol = Symbol(trade['instrument'], account)
             initial_risk = symbol.last_atr
