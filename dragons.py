@@ -1,6 +1,4 @@
-import json
 import pprint
-import datetime as dt
 
 import pandas as pd
 import requests
@@ -274,6 +272,7 @@ class Trade:
         url = f'{self.account.base_url}/accounts/{self.account.account_id}/trades/{self.trade_id}/close'
         return(requests.put(url, headers=self.account.headers))
 
+
 class Entry:
     """Class containing entry criteria functions"""
     def channel_breakout(symbol):
@@ -291,7 +290,8 @@ class Entry:
             return 'sell entry'
         else:
             return None
-    
+
+
 class Exit:
     """Class containing exit criteria functions"""
     def trailing_period_close(account, trade, periods=40):
@@ -315,10 +315,12 @@ class Exit:
             print(f'Something has gone wrong. Trade id {trade["id"]} has position size of 0')
             return False
 
-if __name__ == "__main__":
+
+def on_tick_loop():
     list_of_symbols = [ 'EUR_USD', 'ETH_USD', 'USD_JPY', 'BTC_USD',
                         'WTICO_USD', 'GBP_USD', 'NATGAS_USD',
                        'SPX500_USD']
+
     account = Account(API_KEY)
 
     for trade in account.get_open_trades().json()['trades']:
@@ -343,7 +345,7 @@ if __name__ == "__main__":
             print(f'No new entry for symbol {name}')
             continue
         elif Entry.channel_breakout(symbol) == 'buy entry':
-            is_buy = True   
+            is_buy = True
         elif Entry.channel_breakout(symbol) == 'sell entry':
             is_buy = False
 
@@ -365,3 +367,13 @@ if __name__ == "__main__":
             position_volume=units)
 
         pprint.pp(order.send())
+
+def check_correlation(name1, name2):
+    acc = Account(API_KEY)
+    s1 = Symbol(name1, acc).get_ohlc()
+    s2 = Symbol(name2, acc).get_ohlc()
+    return(s1['close'].corr(s2['close']))
+
+
+if __name__ == "__main__":
+    on_tick_loop()
