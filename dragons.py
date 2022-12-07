@@ -1,4 +1,5 @@
 import pprint
+import logging as lg
 
 import pandas as pd
 import requests
@@ -14,6 +15,7 @@ from ta.trend import ADXIndicator
 #       - 500 real bad
 
 API_KEY = ''
+lg.basicConfig(filename='dragons.log', level=lg.DEBUG)
 
 with open('api.key','r',encoding='utf-8') as f:
     API_KEY = f.readlines()[0].replace('\n','')
@@ -22,6 +24,8 @@ with open('api.key','r',encoding='utf-8') as f:
 class ResponseError(Exception):
     pass
 
+class InstrumentError(Exception):
+    pass
 
 class Account:
     def __init__(self, api_key,live=False,account_id=None):
@@ -38,22 +42,22 @@ class Account:
 
     def get_id(self):
         url = f'{self.base_url}/accounts'
-        response = requests.get(url,headers=self.headers)
+        response = requests.get(url,headers=self.headers, timeout=10)
         return(response.json())['accounts'][0]['id']
 
     def get_summary(self):
         url = f'{self.base_url}/accounts/{self.account_id}/summary'
-        response = requests.get(url,headers=self.headers)
+        response = requests.get(url,headers=self.headers, timeout=10)
         return(response)
         
     def get_symbols(self):
         url = f'{self.base_url}/accounts/{self.account_id}/instruments' 
-        response = requests.get(url,headers=self.headers)
+        response = requests.get(url,headers=self.headers, timeout=10)
         return(response)
    
     def get_open_trades(self):
         url = f'{self.base_url}/accounts/{self.account_id}/openTrades' 
-        response = requests.get(url,headers=self.headers)
+        response = requests.get(url,headers=self.headers, timeout=10)
         return(response)
 
 
@@ -77,15 +81,17 @@ class Symbol:
     def get_details(self):
         url = f'{self.account.base_url}/accounts/{self.account.account_id}/instruments'
         params = {'instruments':f'{self.name}'}
-        response = requests.get(url,headers=self.account.headers,params=params)
+        response = requests.get(url,headers=self.account.headers,params=params, timeout=10)
         return(response.json()['instruments'][0])
     
     def get_candles(self,count=1):
         url = f'{self.account.base_url}/accounts/{self.account.account_id}/instruments/{self.name}/candles'
         params = {'price':'B', 'granularity':'D', 'count':f'{count}'}
-        response = requests.get(url,headers=self.account.headers,params=params)
+        response = requests.get(url,headers=self.account.headers,params=params, timeout=10)
         if response.status_code != 200:
-            raise ResponseError(f'Received error code when attempting to obtain candles. Text of error {response.text}')
+            lg.warning(response.json()['errorMessage'])
+            print(response.json()['errorMessage'])
+            return(None)
         else:
             return(response.json()['candles'])
     
@@ -98,7 +104,10 @@ class Symbol:
         close_list  = []
         time_list   = []
 
-        for x in self.get_candles(count=number_of_periods):
+        candle_response = self.get_candles(count=number_of_periods)
+        if candle_response is None:
+            return None
+        for x in candle_response:
             open_list.append(float(x['bid']['o']))
             high_list.append(float(x['bid']['h']))
             low_list.append(float(x['bid']['l']))
@@ -135,6 +144,10 @@ class Symbol:
                             close=df['close'], 
                             window=18)
         return(atr_indicator.average_true_range())
+
+    def check_correlation(self, sym2):
+        """Return the correlation between the close price of the Symbol object and another symbol over the past 100 periods"""
+        return(self.get_ohlc()['close'].corr(sym2.get_ohlc()['close']))
 
 
 class PositionSize:
@@ -183,21 +196,20 @@ class PositionSize:
             try:
                 symbol = Symbol(
                     f'{self.account.currency}_{self.symbol.quote_currency}',
-                    account)
+                    self.account)
             except KeyError as exc:
-                pass
                 try:
                     symbol = Symbol(
                         f'{self.symbol.quote_currency}_{self.account.currency}',
-                        account)
+                        self.account)
                 except KeyError as exc:
+                    lg.error(exc)
                     print(exc)
                 else:
                     conversion_rate = 1/float(symbol.price)
             else:
                 conversion_rate = float(symbol.price)
         return(conversion_rate)
-
 
 class Trade:
     """Creates Trade object that takes params and returns order request object 
@@ -300,26 +312,32 @@ class Exit:
             price of n periods occurred in the most recent period,
             returns True, else False
         """
+        retval = False
+        logval = ''
         ohlc = trade.symbol.get_ohlc()
         if  (ohlc['close'].max() == ohlc['close'][-1]
             and trade.position_volume < 0):
-            #sell exit
-            print(f'Close signal for sell trade with trade id {trade["id"]} sent.')
-            return True 
+            logval = f'Close signal for sell trade with trade id {trade["id"]} sent.'
+            retval = True 
         elif (ohlc['close'].min() == ohlc['close'][-1]
             and trade.position_volume > 0):
-            #buy exit
-            print(f'Close signal for buy trade with trade id {trade["id"]} sent.')
-            return True
+            logval = f'Close signal for buy trade with trade id {trade["id"]} sent.'
+            retval = True 
         elif trade.position_volume == 0:
-            print(f'Something has gone wrong. Trade id {trade["id"]} has position size of 0')
-            return False
+            logval = f'Something has gone wrong. Trade id {trade["id"]} has position size of 0'
+            retval = False 
+        if logval:
+            lg.info(logval)
+            print(logval)
+        return retval
 
 
 def on_tick_loop():
-    list_of_symbols = [ 'EUR_USD', 'ETH_USD', 'USD_JPY', 'BTC_USD',
-                        'WTICO_USD', 'GBP_USD', 'NATGAS_USD',
-                       'SPX500_USD']
+    list_of_symbols = ['UK100_GBP', 'SPX500_USD', 'NAS100_USD', 'USD_JPY', 'EUR_USD', 'BCO_USD', 'NATGAS_USD', 'WHEAT_USD', 'SOYBN_USD', 'SUGAR_USD', 'ETH_USD', 'XAU_USD', 'XAG_USD', 'GBP_USD']
+
+    #list_of_symbols = [ 'EUR_USD', 'ETH_USD', 'USD_JPY', 'BTC_USD',
+    #                    'WTICO_USD', 'GBP_USD', 'NATGAS_USD',
+    #                   'SPX500_USD']
 
     account = Account(API_KEY)
 
@@ -341,8 +359,11 @@ def on_tick_loop():
 
     for name in list_of_symbols:
         symbol = Symbol(name, account)
+        logval = ''
         if Entry.channel_breakout(symbol) == None:
-            print(f'No new entry for symbol {name}')
+            logval = f'No new entry for symbol {name}'
+            print(logval)
+            lg.info(logval)
             continue
         elif Entry.channel_breakout(symbol) == 'buy entry':
             is_buy = True
@@ -363,17 +384,22 @@ def on_tick_loop():
             open_price=symbol.price,
             initial_risk=initial_risk,
             symbol=symbol,
-            trade_id=trade['id'],
             position_volume=units)
 
         pprint.pp(order.send())
+        #lg.info(f'New trade sent, ticket {order.send}')
 
-def check_correlation(name1, name2):
-    acc = Account(API_KEY)
-    s1 = Symbol(name1, acc).get_ohlc()
-    s2 = Symbol(name2, acc).get_ohlc()
-    return(s1['close'].corr(s2['close']))
-
+def print_correlation(symbol_list):
+    if symbol_list is None:
+        symbol_list = ['UK100_GBP', 'SPX500_USD', 'NAS100_USD', 'USD_JPY', 'EUR_USD', 'BCO_USD', 'NATGAS_USD', 'WHEAT_USD', 'SOYBN_USD', 'SUGAR_USD', 'ETH_USD', 'XAU_USD', 'XAG_USD', 'GBP_USD']
+    for x in symbol_list:
+        account = Account(API_KEY)
+        test_list = symbol_list.copy()
+        s1 = Symbol(x, account)
+        test_list.remove(x)
+        ret = [f'{s1.name}, {y}, {s1.check_correlation(Symbol(y, account))}' for y in test_list]
+        ret = "\n".join(ret)
+        print(ret)
 
 if __name__ == "__main__":
     on_tick_loop()
