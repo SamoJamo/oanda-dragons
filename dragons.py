@@ -1,3 +1,4 @@
+import time
 import pprint
 import logging as lg
 
@@ -15,7 +16,7 @@ from ta.trend import ADXIndicator
 #       - 500 real bad
 
 API_KEY = ''
-lg.basicConfig(filename='dragons.log', level=lg.DEBUG)
+lg.basicConfig(filename='dragons.log', level=lg.WARNING)
 
 with open('api.key','r',encoding='utf-8') as f:
     API_KEY = f.readlines()[0].replace('\n','')
@@ -51,6 +52,7 @@ class Account:
         return(response)
         
     def get_symbols(self):
+        """ Return the response to a requested list of symbols enabled for trading on this account"""
         url = f'{self.base_url}/accounts/{self.account_id}/instruments' 
         response = requests.get(url,headers=self.headers, timeout=10)
         return(response)
@@ -128,6 +130,7 @@ class Symbol:
         return(df) 
         
     def get_adx(self):
+        """Return the ADX with default period 18"""
         df = self.get_ohlc() 
         adx_indicator = ADXIndicator(
                             high=df['high'],
@@ -137,6 +140,7 @@ class Symbol:
         return(adx_indicator.adx())
  
     def get_atr(self):
+        """Return the ATR with default period 18"""
         df = self.get_ohlc()
         atr_indicator = AverageTrueRange(
                             high=df['high'], 
@@ -158,8 +162,7 @@ class PositionSize:
             - account is the object defined above
             - percent_risk is percentage of account balance to be 
                 risked on each trade
-            - risk_pips is the amount of risk taken in pips
-        """
+            - risk_pips is the amount of risk taken in pips"""
         self.symbol = kwargs['symbol']
         self.account = kwargs['account']
         self.percent_risk = kwargs['percent_risk']
@@ -390,16 +393,23 @@ def on_tick_loop():
         #lg.info(f'New trade sent, ticket {order.send}')
 
 def print_correlation(symbol_list):
-    if symbol_list is None:
-        symbol_list = ['UK100_GBP', 'SPX500_USD', 'NAS100_USD', 'USD_JPY', 'EUR_USD', 'BCO_USD', 'NATGAS_USD', 'WHEAT_USD', 'SOYBN_USD', 'SUGAR_USD', 'ETH_USD', 'XAU_USD', 'XAG_USD', 'GBP_USD']
-    for x in symbol_list:
+    while(True):
         account = Account(API_KEY)
-        test_list = symbol_list.copy()
-        s1 = Symbol(x, account)
-        test_list.remove(x)
-        ret = [f'{s1.name}, {y}, {s1.check_correlation(Symbol(y, account))}' for y in test_list]
-        ret = "\n".join(ret)
-        print(ret)
+        x = symbol_list[0]
+        if x:
+            test_list = symbol_list.copy()
+            s1 = Symbol(x, account)
+            test_list.remove(x)
+            ret = [f'{s1.name}, {y}, {s1.check_correlation(Symbol(y, account))}' for y in test_list if y]
+            ret = '\n'.join(ret)
+            print(ret)
+            with open('all_correlations.txt','a') as w:
+                w.write(f'{ret}\n')
+        symbol_list.remove(x)
+        if len(symbol_list) == 0:
+            break
+        time.sleep(1) # to prevent ratelimiting measures from oanda
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     on_tick_loop()
