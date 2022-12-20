@@ -69,7 +69,8 @@ class Symbol:
     def __init__(self, name, account):
         self.account = account
         self.name = name
-        self.price = self.get_candles()[0]['bid']['c']
+        candles = self.get_candles()
+        self.price = candles[0]['bid']['c']
         details = self.get_details()
         self.pip_location = details['pipLocation']
         self.pip = 1 * 10 ** self.pip_location 
@@ -91,9 +92,8 @@ class Symbol:
         params = {'price':'B', 'granularity':'D', 'count':f'{count}'}
         response = requests.get(url,headers=self.account.headers,params=params, timeout=10)
         if response.status_code != 200:
-            lg.warning(response.json()['errorMessage'])
-            print(response.json()['errorMessage'])
-            return(None)
+            lg.error(response.json()['errorMessage'])
+            raise ResponseError(response.json()['errorMessage'])
         else:
             return(response.json()['candles'])
     
@@ -226,7 +226,7 @@ class Trade:
             
     def __init__(self, account, **kwargs):
         self.account            = account
-        self.symbol             = Symbol(kwargs['symbol'],self.account)
+        self.symbol             = Symbol(kwargs['symbol'], self.account)
         self.position_volume    = float(kwargs['position_volume'])
         self.open_price         = float(kwargs.get('open_price', self.symbol.price))
         self.trade_id           = kwargs.get('trade_id', None)
@@ -361,7 +361,11 @@ def on_tick_loop():
             position = Trade.from_request(account,trade)
 
     for name in list_of_symbols:
-        symbol = Symbol(name, account)
+        try:
+            symbol = Symbol(name, account)
+        except ResponseError as e:
+            print(e)
+            continue
         logval = ''
         if Entry.channel_breakout(symbol) == None:
             logval = f'No new entry for symbol {name}'
