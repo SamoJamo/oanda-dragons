@@ -1,4 +1,3 @@
-import time
 import pprint
 import logging as lg
 
@@ -10,13 +9,11 @@ from ta.trend import ADXIndicator
 # TODO
 #   - test Trade object to accept trade data from get_open_orders
 #   - write docstrings for all classes and methods
-#   - response exception handling:
-#       - 200 good
-#       - 400 bad
-#       - 500 real bad
+#   - replace ta with talib
 
 API_KEY = ''
-lg.basicConfig(filename='dragons.log', level=lg.WARNING)
+LOG_FMT = '%(levelname)s %(asctime)s %(message)s'
+lg.basicConfig(filename='dragons.log', level=lg.INFO, format=LOG_FMT)
 
 with open('api.key','r',encoding='utf-8') as f:
     API_KEY = f.readlines()[0].replace('\n','')
@@ -26,6 +23,9 @@ class ResponseError(Exception):
     pass
 
 class InstrumentError(Exception):
+    pass
+
+class TradeError(Exception):
     pass
 
 class Account:
@@ -85,15 +85,21 @@ class Symbol:
         url = f'{self.account.base_url}/accounts/{self.account.account_id}/instruments'
         params = {'instruments':f'{self.name}'}
         response = requests.get(url,headers=self.account.headers,params=params, timeout=10)
-        return(response.json()['instruments'][0])
+        if response.status_code != 200:
+            msg = f'{response.json()["errorMessage"]}; instrument name is {self.name}'
+            lg.error(msg)
+            raise ResponseError(msg)
+        else:
+            return(response.json()['instruments'][0])
     
     def get_candles(self,count=1):
         url = f'{self.account.base_url}/accounts/{self.account.account_id}/instruments/{self.name}/candles'
         params = {'price':'B', 'granularity':'D', 'count':f'{count}'}
         response = requests.get(url,headers=self.account.headers,params=params, timeout=10)
         if response.status_code != 200:
-            lg.error(response.json()['errorMessage'])
-            raise ResponseError(response.json()['errorMessage'])
+            msg = f'{response.json()["errorMessage"]}; instrument name is {self.name}'
+            lg.error(msg)
+            raise ResponseError(msg)
         else:
             return(response.json()['candles'])
     
@@ -226,29 +232,28 @@ class Trade:
             
     def __init__(self, account, **kwargs):
         self.account            = account
-        self.symbol             = Symbol(kwargs['symbol'], self.account)
+        self.symbol             = kwargs['symbol']
         self.position_volume    = float(kwargs['position_volume'])
         self.open_price         = float(kwargs.get('open_price', self.symbol.price))
         self.trade_id           = kwargs.get('trade_id', None)
         self.open_time          = kwargs.get('openTime', None)
-        self.stop_loss_price    = float(kwargs.get('stop_loss_price', None))
-        self.profit_amount      = float(kwargs.get('profit_amount', None))
-        self.commission_amount  = float(kwargs.get('commission_amount', None))
-        self.swap_amount        = float(kwargs.get('swap_amount', None))
+        self.stop_loss_price    = kwargs.get('stop_loss_price', None)
+        self.profit_amount      = kwargs.get('profit_amount', None)
+        self.commission_amount  = kwargs.get('commission_amount', None)
+        self.swap_amount        = kwargs.get('swap_amount', None)
         self.stop_loss_id       = kwargs.get('stop_loss_id', None)
-        self.initial_risk       = float(kwargs.get(
-                                            'initial_risk', 
-                                            abs(float(self.open_price)
-                                            - float(self.stop_loss_price))))
+        self.initial_risk       = float(kwargs['initial_risk']) 
     
         if self.position_volume > 0:
-            self.stop_loss_price = round(self.open_price - self.initial_risk, 
-                                        self.symbol.display_precision)
-            self.price_bound = self.open_price + (self.symbol.pip * 3)
+            self.stop_loss_price = round(
+                                    self.open_price - self.initial_risk,
+                                    self.symbol.display_precision)
+
+            self.price_bound = self.open_price + (self.symbol.pip * 10)
         if self.position_volume < 0: 
             self.stop_loss_price = round(self.open_price + self.initial_risk,
                                         self.symbol.display_precision)
-            self.price_bound = self.open_price - (self.symbol.pip * 3)
+            self.price_bound = self.open_price - (self.symbol.pip * 10)
 
     @classmethod
     def from_json(cls, account, trade_json):
@@ -280,7 +285,17 @@ class Trade:
                 # ^ indicates the worst price that the order will execute at
                 'positionFill'      : 'OPEN_ONLY',
                 'stopLossOnFill'    : {'price' : f'{self.stop_loss_price}'}}}
-        return(requests.post(url, headers=self.account.headers, json=order_request_dict))
+        response = requests.post(url, headers=self.account.headers, json=order_request_dict)
+        if response.status_code != 201:
+            msg = f'{response.json()["errorMessage"]}'
+            lg.error(msg)
+            raise ResponseError(msg)
+        elif 'orderCancelTransaction' in response.json():
+            msg = f'Trade cancelled, error text: {response.json()["orderCancelTransaction"]["reason"]}'
+            lg.error(msg)
+            raise TradeError(f'{msg}')
+        else:
+            return(response.json())
 
     def close(self):
         """Close the specified order"""
@@ -336,7 +351,7 @@ class Exit:
 
 
 def on_tick_loop():
-    list_of_symbols = ['UK100_GBP', 'SPX500_USD', 'NAS100_USD', 'USD_JPY', 'EUR_USD', 'BCO_USD', 'NATGAS_USD', 'WHEAT_USD', 'SOYBN_USD', 'SUGAR_USD', 'ETH_USD', 'XAU_USD', 'XAG_USD', 'GBP_USD']
+    list_of_symbols = ['XAG_USD', 'GBP_USD']
 
     #list_of_symbols = [ 'EUR_USD', 'ETH_USD', 'USD_JPY', 'BTC_USD',
     #                    'WTICO_USD', 'GBP_USD', 'NATGAS_USD',
@@ -361,11 +376,7 @@ def on_tick_loop():
             position = Trade.from_request(account,trade)
 
     for name in list_of_symbols:
-        try:
-            symbol = Symbol(name, account)
-        except ResponseError as e:
-            print(e)
-            continue
+        symbol = Symbol(name, account)
         logval = ''
         if Entry.channel_breakout(symbol) == None:
             logval = f'No new entry for symbol {name}'
@@ -393,27 +404,9 @@ def on_tick_loop():
             symbol=symbol,
             position_volume=units)
 
-        pprint.pp(order.send())
-        #lg.info(f'New trade sent, ticket {order.send}')
-
-def print_correlation(symbol_list):
-    while(True):
-        account = Account(API_KEY)
-        x = symbol_list[0]
-        if x:
-            test_list = symbol_list.copy()
-            s1 = Symbol(x, account)
-            test_list.remove(x)
-            ret = [f'{s1.name}, {y}, {s1.check_correlation(Symbol(y, account))}' for y in test_list if y]
-            ret = '\n'.join(ret)
-            print(ret)
-            with open('all_correlations.txt','a') as w:
-                w.write(f'{ret}\n')
-        symbol_list.remove(x)
-        if len(symbol_list) == 0:
-            break
-        time.sleep(1) # to prevent ratelimiting measures from oanda
-
+        order_response = order.open()
+        pprint.pp(order_response)
+        lg.info(f'New trade sent, ticket {order_response["orderCreateTransaction"]["id"]}')
 
 if __name__ == '__main__':
     on_tick_loop()
