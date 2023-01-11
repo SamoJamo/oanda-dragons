@@ -100,6 +100,9 @@ class Symbol:
             msg = f'{response.json()["errorMessage"]}; instrument name is {self.name}'
             lg.error(msg)
             raise ResponseError(msg)
+        elif not response.json()['candles']:
+            print(f'instrument {self.name} json candles list is empty')
+            print(response.json())
         else:
             return(response.json()['candles'])
     
@@ -351,8 +354,11 @@ class Exit:
 
 
 def on_tick_loop():
-    list_of_symbols = ['XAG_USD', 'GBP_USD']
+    list_of_symbols = ['USD_CNH']
+    with open('symbols_list.txt','r') as f:
+        list_of_symbols = [x.replace('\n','') for x in f.readlines() if x]
 
+    #in case we need test data
     #list_of_symbols = [ 'EUR_USD', 'ETH_USD', 'USD_JPY', 'BTC_USD',
     #                    'WTICO_USD', 'GBP_USD', 'NATGAS_USD',
     #                   'SPX500_USD']
